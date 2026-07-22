@@ -18,7 +18,7 @@ canvas{display:block;width:100%;background:#020617;border:1px solid #334155;bord
   <div class="top">
     <div class="pill">ESP32 Matrix PMX</div>
     <h1>无线上传</h1>
-    <p class="sub">在浏览器里导入图片或 GIF、裁剪调色、生成 PMX，并通过 HTTP 写入 ESP32 Flash。网页端不走串口。</p>
+    <p class="sub">在浏览器里导入图片或 GIF、裁剪调色、生成 PMX，并通过 HTTPS 写入 ESP32 Flash。网页端不走串口。</p>
   </div>
   <div class="grid">
     <section class="card">
@@ -36,7 +36,7 @@ canvas{display:block;width:100%;background:#020617;border:1px solid #334155;bord
       <div class="metric"><span>输出</span><b id="outInfo">未生成</b></div>
       <div class="metric"><span>设备状态</span><b id="devInfo">未查询</b></div>
       <div class="btnrow"><button id="downloadPng" class="secondary">导出 PNG</button><button id="downloadGif" class="secondary">导出 GIF</button></div>
-      <div class="btnrow"><button id="downloadPmx" class="secondary">导出 PMX</button><button id="upload">HTTP 上传到 Flash</button></div>
+      <div class="btnrow"><button id="downloadPmx" class="secondary">导出 PMX</button><button id="upload">HTTPS 上传到 Flash</button></div>
       <pre id="status" class="status">请选择图片、GIF 或 PMX。</pre>
     </section>
     <section class="card">
@@ -48,7 +48,7 @@ canvas{display:block;width:100%;background:#020617;border:1px solid #334155;bord
       <label>对比度 <span id="cv">0</span></label><input id="contrast" type="range" min="-100" max="100" value="0">
       <label>饱和度 <span id="sv">0</span></label><input id="saturation" type="range" min="-100" max="100" value="0">
       <button id="resetAdjust" class="secondary">增强参数归零</button>
-      <p class="tiny">PMX 格式为 64x64 RGB332。HTTP 上传会暂停显示、擦写 assets 分区、写入 PMX，然后从 Flash 重新加载。</p>
+      <p class="tiny">PMX 格式为 64x64 RGB332。HTTPS 上传会暂停显示、擦写 assets 分区、写入 PMX，然后从 Flash 重新加载。</p>
     </section>
   </div>
 </main>
@@ -80,14 +80,14 @@ function pixelate(fr,ow,oh,xo,yo,mode){let out=new Uint8ClampedArray(C*C*4);for(
 function drawPreview(){pctx.putImageData(canvasFrames[previewIndex]?.rgba||new ImageData(C,C),0,0)}
 function pmxSize(n){return 24+n*8+n*FRAME_BYTES}
 function makePmx(){if(!canvasFrames.length)render(false);const n=canvasFrames.length,bytes=pmxSize(n);if(bytes>ASSET_CAP)throw Error('PMX 超过 assets 分区容量：'+bytes);const b=new Uint8Array(bytes),v=new DataView(b.buffer);b.set([80,77,88,49,1,1,64,64],0);v.setUint32(8,n,true);v.setUint32(12,24,true);v.setUint32(16,24+n*8,true);v.setUint32(20,bytes,true);let off=24+n*8;for(let i=0;i<n;i++){v.setUint32(24+i*8,Math.max(20,canvasFrames[i].delay),true);v.setUint32(28+i*8,off+i*FRAME_BYTES,true)}for(let f=0;f<n;f++){const d=canvasFrames[f].rgba.data;for(let p=0;p<FRAME_BYTES;p++)b[off+f*FRAME_BYTES+p]=rgb332(d[p*4],d[p*4+1],d[p*4+2])}currentPmx=b;return b}
-function parsePmx(b,name){if(b.length<24||String.fromCharCode(...b.slice(0,4))!=='PMX1')throw Error('不是 PMX1 文件');const v=new DataView(b.buffer,b.byteOffset,b.byteLength),n=v.getUint32(8,true),data=v.getUint32(16,true),size=v.getUint32(20,true);if(size!==b.length)throw Error('PMX 文件长度不匹配');canvasFrames=[];for(let i=0;i<Math.min(n,120);i++){const delay=v.getUint32(24+i*8,true),fo=v.getUint32(28+i*8,true),img=new ImageData(C,C);for(let p=0;p<FRAME_BYTES;p++){const [r,g,bb]=pal(b[fo+p]);img.data[p*4]=r;img.data[p*4+1]=g;img.data[p*4+2]=bb;img.data[p*4+3]=255}canvasFrames.push({delay,rgba:img})}drawPreview();$('srcInfo').textContent=name+' / PMX';$('outInfo').textContent=n+' 帧 / '+b.length+' 字节';status('已载入 PMX，可直接 HTTP 上传。'+(n>120?' 预览只显示前 120 帧。':''))}
+function parsePmx(b,name){if(b.length<24||String.fromCharCode(...b.slice(0,4))!=='PMX1')throw Error('不是 PMX1 文件');const v=new DataView(b.buffer,b.byteOffset,b.byteLength),n=v.getUint32(8,true),data=v.getUint32(16,true),size=v.getUint32(20,true);if(size!==b.length)throw Error('PMX 文件长度不匹配');canvasFrames=[];for(let i=0;i<Math.min(n,120);i++){const delay=v.getUint32(24+i*8,true),fo=v.getUint32(28+i*8,true),img=new ImageData(C,C);for(let p=0;p<FRAME_BYTES;p++){const [r,g,bb]=pal(b[fo+p]);img.data[p*4]=r;img.data[p*4+1]=g;img.data[p*4+2]=bb;img.data[p*4+3]=255}canvasFrames.push({delay,rgba:img})}drawPreview();$('srcInfo').textContent=name+' / PMX';$('outInfo').textContent=n+' 帧 / '+b.length+' 字节';status('已载入 PMX，可直接 HTTPS 上传。'+(n>120?' 预览只显示前 120 帧。':''))}
 function saveBlob(blob,name){const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=name;a.click();setTimeout(()=>URL.revokeObjectURL(a.href),1000)}
 function downloadPng(){if(!canvasFrames.length)render(false);preview.toBlob(b=>saveBlob(b,'matrix_first_frame.png'),'image/png')}
 function downloadPmx(){try{saveBlob(new Blob([makePmx()],{type:'application/octet-stream'}),'matrix_content.pmx');status('PMX 已导出。')}catch(e){status(e.message,true)}}
 function gifData(frames){let out=[71,73,70,56,57,97,64,0,64,0,247,0,0];for(let i=0;i<256;i++){const c=pal(i);out.push(c[0],c[1],c[2])}out.push(33,255,11,...[...('NETSCAPE2.0')].map(c=>c.charCodeAt(0)),3,1,0,0,0);for(const fr of frames){let inds=new Uint8Array(FRAME_BYTES),d=fr.rgba.data;for(let i=0;i<FRAME_BYTES;i++)inds[i]=rgb332(d[i*4],d[i*4+1],d[i*4+2]);out.push(33,249,4,0,Math.round(fr.delay/10)&255,(Math.round(fr.delay/10)>>8)&255,0,0,44,0,0,0,0,64,0,64,0,0,8);let data=lzwRaw(inds);for(let i=0;i<data.length;i+=255){let n=Math.min(255,data.length-i);out.push(n,...data.slice(i,i+n))}out.push(0)}out.push(59);return new Uint8Array(out)}
 function lzwRaw(pix){let codes=[],i=0;while(i<pix.length){codes.push(256);let n=Math.min(254,pix.length-i);for(let j=0;j<n;j++)codes.push(pix[i++]);}codes.push(257);let bytes=[],buf=0,bits=0;for(const c of codes){buf|=c<<bits;bits+=9;while(bits>=8){bytes.push(buf&255);buf>>=8;bits-=8}}if(bits)bytes.push(buf&255);return bytes}
 function downloadGif(){if(!canvasFrames.length)render(false);saveBlob(new Blob([gifData(canvasFrames)],{type:'image/gif'}),'matrix_animation.gif');status('GIF 已导出。')}
-async function upload(){try{const pmx=currentPmx||makePmx();status('HTTP 上传中：'+pmx.length+' 字节');const r=await fetch('/upload',{method:'POST',body:pmx});const t=await r.text();status((r.ok?'完成：':'失败：')+t,!r.ok);ping()}catch(e){status('上传失败：'+e.message,true)}}
+async function upload(){try{const pmx=currentPmx||makePmx();status('HTTPS 上传中：'+pmx.length+' 字节');const r=await fetch('/upload',{method:'POST',body:pmx});const t=await r.text();status((r.ok?'完成：':'失败：')+t,!r.ok);ping()}catch(e){status('上传失败：'+e.message,true)}}
 async function ping(){try{const r=await fetch('/ping');$('devInfo').textContent=JSON.stringify(await r.json())}catch(e){$('devInfo').textContent='离线'}}
 $('file').onchange=e=>e.target.files[0]&&decodeFile(e.target.files[0]).catch(err=>status('导入失败：'+err.message,true));['aspect','w','h','x','y','mode','brightness','contrast','saturation'].forEach(id=>$(id).oninput=()=>{syncLabels();if(id==='aspect')resetCrop();else render(true)});$('resetCrop').onclick=resetCrop;$('fitCanvas').onclick=()=>{setFit();render(true)};$('resetAdjust').onclick=()=>{['brightness','contrast','saturation'].forEach(id=>$(id).value=0);render(true)};$('downloadPng').onclick=downloadPng;$('downloadGif').onclick=downloadGif;$('downloadPmx').onclick=downloadPmx;$('upload').onclick=upload;
 source.onmousedown=e=>{if(!srcFrames[0])return;const p=pt(e);dragging=true;moving=p.x>=crop.x&&p.x<=crop.x+crop.w&&p.y>=crop.y&&p.y<=crop.y+crop.h;anchor=p;dragOffset={x:p.x-crop.x,y:p.y-crop.y}};

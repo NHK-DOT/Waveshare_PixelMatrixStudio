@@ -1,7 +1,7 @@
 # MatrixWithTerm Workflow Pipeline
 
 This document describes the full content pipeline from source media to HUB75
-refresh. The browser HTTP path is the primary path.
+refresh. The browser HTTPS path is the primary path.
 
 ## 1. Source media
 
@@ -26,10 +26,10 @@ editor created the file.
 - Brightness, contrast, and saturation adjustment.
 - 64x64 LED preview.
 - PNG, GIF, and PMX export.
-- HTTP upload to the ESP32 `/upload` endpoint.
+- HTTPS upload to the ESP32 `/upload` endpoint.
 
 The page is embedded into firmware by `target_add_binary_data` in
-`matrix_idf/main/CMakeLists.txt`. The root HTTP handler serves those embedded
+`matrix_idf/main/CMakeLists.txt`. The root HTTPS handler serves those embedded
 bytes directly.
 
 ## 3. PMX format
@@ -49,7 +49,7 @@ tool.
 Static images become one-frame PMX files. GIFs become multi-frame PMX files
 with source frame delays preserved where available.
 
-## 4. HTTP upload
+## 4. HTTPS upload
 
 The browser uploads PMX bytes to:
 
@@ -61,7 +61,7 @@ Firmware handling in `matrix_idf/main/matrix_idf.c`:
 
 1. Rejects empty or oversized requests.
 2. Reads and validates the PMX header before Flash erase.
-3. Marks HTTP upload and assets update as active.
+3. Marks HTTPS upload and assets update as active.
 4. Releases the old RAM cache so the new content has memory available.
 5. Pauses display playback during Flash erase/write.
 6. Erases only the `assets` data partition.
@@ -69,7 +69,7 @@ Firmware handling in `matrix_idf/main/matrix_idf.c`:
 8. Clears update flags, resumes display, and increments the PMX generation.
 
 This is why the web page does not need serial. The ESP32 writes its own content
-partition after receiving bytes over HTTP.
+partition after receiving bytes over HTTPS.
 
 ## 5. Flash storage
 
@@ -111,4 +111,3 @@ burning:
 
 This path is separate from the browser path. It is useful when the ESP32 web
 page is unavailable, but it is not part of the browser upload flow.
-

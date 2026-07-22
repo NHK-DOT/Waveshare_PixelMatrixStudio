@@ -1,6 +1,6 @@
 # Web PMX Tool
 
-This is the recommended content workflow. It uses the ESP32 web page and HTTP
+This is the recommended content workflow. It uses the ESP32 HTTPS page and
 upload only; it does not burn through serial, COM20, or Web Serial.
 
 ## Open the page
@@ -16,9 +16,10 @@ upload only; it does not burn through serial, COM20, or Web Serial.
 
 - Image input: PNG, JPG, BMP, WEBP, and GIF.
 - PMX input: existing `.pmx` files can be loaded for preview and direct upload.
-- GIF multi-frame decoding depends on browser `ImageDecoder` support. If the
-  browser does not provide it, use Chrome/Edge or export PMX from the desktop
-  tool as a fallback.
+- GIF multi-frame decoding depends on browser `ImageDecoder` support. Open the
+  ESP32 page through HTTPS, for example `https://192.168.1.218/`, and accept or
+  trust the self-signed certificate once. If the browser still shows one frame,
+  use Chrome/Edge or export PMX from the desktop tool as a fallback.
 
 ## Edit output
 
@@ -41,7 +42,8 @@ upload only; it does not burn through serial, COM20, or Web Serial.
 
 ## Upload to ESP32
 
-Click `HTTP 上传到 Flash`.
+Open the ESP32 HTTPS page, accept/trust the self-signed certificate once, then
+click `HTTPS 上传到 Flash`.
 
 The browser sends the PMX bytes with:
 
@@ -50,7 +52,7 @@ POST /upload
 Content-Type: application/octet-stream
 ```
 
-The ESP32 receives the HTTP request, validates the PMX header, pauses playback,
+The ESP32 receives the HTTPS request, validates the PMX header, pauses playback,
 erases the `assets` partition, writes the new PMX into Flash, increments the
 content generation counter, and resumes playback from the new content.
 
@@ -60,9 +62,11 @@ Do not add COM-port logic to the web page unless the product direction changes.
 ## Troubleshooting
 
 - Page opens but upload fails: confirm the browser is using the ESP32 page, not a
-  local file copy. Relative `/upload` only exists on the ESP32 HTTP server.
-- Import works but GIF is static: use a browser with `ImageDecoder` support or
-  generate PMX from `PixelMatrixStudio.exe`.
+  local file copy. Relative `/upload` only exists on the ESP32 HTTPS server.
+- Import works but GIF is static: confirm the page is opened as
+  `https://192.168.1.218/` and the self-signed certificate has been accepted;
+  then use a browser with `ImageDecoder` support or generate PMX from
+  `PixelMatrixStudio.exe`.
 - Upload succeeds but old content remains: refresh the page and upload again;
   the firmware should reload when its generation counter changes.
 - File too large: reduce GIF frame count/duration or use a smaller animation.

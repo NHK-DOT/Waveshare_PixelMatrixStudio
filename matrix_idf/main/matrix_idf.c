@@ -8,6 +8,7 @@
 #include "esp_attr.h"
 #include "esp_event.h"
 #include "esp_http_server.h"
+#include "esp_https_server.h"
 #include "esp_log.h"
 #include "esp_netif.h"
 #include "esp_partition.h"
@@ -63,6 +64,10 @@ static const char *TAG = "PMX_PLAYER";
 
 extern const uint8_t web_index_html_start[] asm("_binary_web_index_html_start");
 extern const uint8_t web_index_html_end[] asm("_binary_web_index_html_end");
+extern const uint8_t https_server_crt_start[] asm("_binary_https_server_crt_start");
+extern const uint8_t https_server_crt_end[] asm("_binary_https_server_crt_end");
+extern const uint8_t https_server_key_start[] asm("_binary_https_server_key_start");
+extern const uint8_t https_server_key_end[] asm("_binary_https_server_key_end");
 
 typedef struct __attribute__((packed)) {
     char magic[4];
@@ -366,7 +371,7 @@ static bool pmx_adopt_pending_cache(void)
     if (s_cache_mutex != NULL) xSemaphoreGive(s_cache_mutex);
     free(old_frames);
 
-    ESP_LOGI(TAG, "HTTP PMX RAM cache adopted: %lu frames",
+    ESP_LOGI(TAG, "HTTPS PMX RAM cache adopted: %lu frames",
              (unsigned long)s_cached_frame_count);
     return true;
 }
@@ -492,7 +497,7 @@ static esp_err_t http_upload_handler(httpd_req_t *request)
     ++s_pmx_generation;
     s_assets_updating = false;
     s_http_uploading = false;
-    ESP_LOGI(TAG, "HTTP Flash upload complete: %d bytes, %lu frames; PMX generation %lu",
+    ESP_LOGI(TAG, "HTTPS Flash upload complete: %d bytes, %lu frames; PMX generation %lu",
              request->content_len, (unsigned long)header.frame_count, (unsigned long)s_pmx_generation);
     httpd_resp_sendstr(request, "Flash upload complete. Display will switch to the saved PMX.");
     return ESP_OK;
@@ -522,14 +527,19 @@ static const httpd_uri_t s_upload_uri = {
 static void start_web_server(void)
 {
     if (s_http_server != NULL) return;
-    httpd_config_t config = HTTPD_DEFAULT_CONFIG();
-    config.max_uri_handlers = 4;
-    config.stack_size = 6144;
-    if (httpd_start(&s_http_server, &config) == ESP_OK) {
+    httpd_ssl_config_t config = HTTPD_SSL_CONFIG_DEFAULT();
+    config.httpd.max_uri_handlers = 4;
+    config.servercert = https_server_crt_start;
+    config.servercert_len = https_server_crt_end - https_server_crt_start;
+    config.prvtkey_pem = https_server_key_start;
+    config.prvtkey_len = https_server_key_end - https_server_key_start;
+    if (httpd_ssl_start(&s_http_server, &config) == ESP_OK) {
         ESP_ERROR_CHECK(httpd_register_uri_handler(s_http_server, &s_root_uri));
         ESP_ERROR_CHECK(httpd_register_uri_handler(s_http_server, &s_ping_uri));
         ESP_ERROR_CHECK(httpd_register_uri_handler(s_http_server, &s_upload_uri));
-        ESP_LOGI(TAG, "HTTP PMX upload server started");
+        ESP_LOGI(TAG, "HTTPS PMX upload server started");
+    } else {
+        ESP_LOGE(TAG, "HTTPS PMX upload server failed to start");
     }
 }
 
@@ -543,7 +553,7 @@ static void wifi_event_handler(void *argument, esp_event_base_t event_base, int3
         esp_wifi_connect();
     } else if (event_base == IP_EVENT && event_id == IP_EVENT_STA_GOT_IP) {
         const ip_event_got_ip_t *event = (const ip_event_got_ip_t *)event_data;
-        ESP_LOGI(TAG, "Wi-Fi connected. Open http://" IPSTR "/", IP2STR(&event->ip_info.ip));
+        ESP_LOGI(TAG, "Wi-Fi connected. Open https://" IPSTR "/", IP2STR(&event->ip_info.ip));
         start_web_server();
     }
 }

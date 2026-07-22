@@ -17,6 +17,10 @@ Thumbs.db
 # Local Wi-Fi credentials
 matrix_idf/main/wifi_config.h
 
+# Local HTTPS self-signed certificate and private key
+matrix_idf/main/https_server.crt
+matrix_idf/main/https_server.key
+
 # Generated desktop binaries
 *.exe
 *.obj
