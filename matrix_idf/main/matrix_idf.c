@@ -7,6 +7,7 @@
 #include "driver/gpio.h"
 #include "esp_attr.h"
 #include "esp_event.h"
+#include "esp_heap_caps.h"
 #include "esp_http_server.h"
 #include "esp_https_server.h"
 #include "esp_log.h"
@@ -59,6 +60,7 @@
 #define PMX_ASSET_SUBTYPE 0x40
 #define PMX_MAX_CACHE_BYTES (240U * 1024U)
 #define PMX_MAX_CACHE_FRAMES (PMX_MAX_CACHE_BYTES / HUB75_FRAME_BYTES)
+#define PMX_CACHE_RESERVE_FRAMES 26U
 
 static const char *TAG = "PMX_PLAYER";
 
@@ -91,6 +93,7 @@ static uint8_t s_decode_buffer[HUB75_FRAME_BYTES];
 static uint8_t *s_cached_frames;
 static uint32_t s_cached_delays[PMX_MAX_CACHE_FRAMES];
 static uint32_t s_cached_frame_count;
+static uint32_t s_cached_frame_capacity;
 static uint8_t *s_pending_frames;
 static uint32_t s_pending_delays[PMX_MAX_CACHE_FRAMES];
 static uint32_t s_pending_frame_count;
@@ -312,27 +315,61 @@ static bool pmx_read_frame_to_scan_buffer(const esp_partition_t *assets, const p
     return true;
 }
 
+static void pmx_invalidate_cache(void)
+{
+    if (s_cache_mutex != NULL) xSemaphoreTake(s_cache_mutex, portMAX_DELAY);
+    s_cached_frame_count = 0;
+    if (s_cache_mutex != NULL) xSemaphoreGive(s_cache_mutex);
+}
+
 static bool pmx_cache_frames(const esp_partition_t *assets, const pmx_header_t *header)
 {
     if (header->frame_count > PMX_MAX_CACHE_FRAMES) {
+        pmx_invalidate_cache();
         ESP_LOGW(TAG, "PMX has %lu frames; RAM cache limit is %lu frames. Falling back to flash streaming.",
                  (unsigned long)header->frame_count, (unsigned long)PMX_MAX_CACHE_FRAMES);
         return false;
     }
 
     const size_t cache_bytes = (size_t)header->frame_count * HUB75_FRAME_BYTES;
-    uint8_t *frames = (uint8_t *)malloc(cache_bytes);
-    if (frames == NULL) {
-        ESP_LOGW(TAG, "Unable to allocate %lu bytes for PMX RAM cache. Falling back to flash streaming.",
-                 (unsigned long)cache_bytes);
-        return false;
+    const uint32_t allocation_frames =
+        header->frame_count < PMX_CACHE_RESERVE_FRAMES ? PMX_CACHE_RESERVE_FRAMES : header->frame_count;
+    uint32_t delays[PMX_MAX_CACHE_FRAMES];
+    uint8_t *frames = NULL;
+    uint32_t frame_capacity = 0;
+    bool reused = false;
+
+    if (s_cache_mutex != NULL) xSemaphoreTake(s_cache_mutex, portMAX_DELAY);
+    if (s_cached_frames != NULL && s_cached_frame_capacity >= header->frame_count) {
+        frames = s_cached_frames;
+        frame_capacity = s_cached_frame_capacity;
+        s_cached_frame_count = 0;
+        reused = true;
+    }
+    if (s_cache_mutex != NULL) xSemaphoreGive(s_cache_mutex);
+
+    if (!reused) {
+        const size_t allocation_bytes = (size_t)allocation_frames * HUB75_FRAME_BYTES;
+        frames = (uint8_t *)malloc(allocation_bytes);
+        if (frames == NULL) {
+            pmx_invalidate_cache();
+            ESP_LOGW(TAG,
+                     "Unable to allocate %lu bytes for PMX RAM cache; free=%lu, largest=%lu. "
+                     "Falling back to flash streaming.",
+                     (unsigned long)allocation_bytes,
+                     (unsigned long)heap_caps_get_free_size(MALLOC_CAP_8BIT),
+                     (unsigned long)heap_caps_get_largest_free_block(MALLOC_CAP_8BIT));
+            return false;
+        }
+        frame_capacity = allocation_frames;
     }
 
     for (uint32_t frame_index = 0; frame_index < header->frame_count; ++frame_index) {
         if (!pmx_read_frame_to_scan_buffer(assets, header, frame_index,
                                            frames + frame_index * HUB75_FRAME_BYTES,
-                                           &s_cached_delays[frame_index])) {
-            free(frames);
+                                           &delays[frame_index])) {
+            if (!reused) free(frames);
+            pmx_invalidate_cache();
             ESP_LOGE(TAG, "Unable to cache PMX frame %lu", (unsigned long)frame_index);
             return false;
         }
@@ -341,11 +378,17 @@ static bool pmx_cache_frames(const esp_partition_t *assets, const pmx_header_t *
     if (s_cache_mutex != NULL) xSemaphoreTake(s_cache_mutex, portMAX_DELAY);
     uint8_t *old_frames = s_cached_frames;
     s_cached_frames = frames;
+    s_cached_frame_capacity = frame_capacity;
     s_cached_frame_count = header->frame_count;
+    memcpy(s_cached_delays, delays, header->frame_count * sizeof(delays[0]));
     if (s_cache_mutex != NULL) xSemaphoreGive(s_cache_mutex);
-    free(old_frames);
-    ESP_LOGI(TAG, "PMX cached in RAM: %lu frames, %lu bytes",
-             (unsigned long)s_cached_frame_count, (unsigned long)cache_bytes);
+    if (old_frames != frames) free(old_frames);
+
+    ESP_LOGI(TAG, "PMX cached in RAM: %lu frames, %lu bytes, capacity %lu frames%s",
+             (unsigned long)s_cached_frame_count,
+             (unsigned long)cache_bytes,
+             (unsigned long)s_cached_frame_capacity,
+             reused ? " (reused)" : "");
     return true;
 }
 
@@ -362,6 +405,7 @@ static bool pmx_adopt_pending_cache(void)
     uint8_t *old_frames = s_cached_frames;
     s_cached_frames = s_pending_frames;
     s_cached_frame_count = s_pending_frame_count;
+    s_cached_frame_capacity = s_pending_frame_count;
     memcpy(s_cached_delays, s_pending_delays,
            s_cached_frame_count * sizeof(s_cached_delays[0]));
 
@@ -374,16 +418,6 @@ static bool pmx_adopt_pending_cache(void)
     ESP_LOGI(TAG, "HTTPS PMX RAM cache adopted: %lu frames",
              (unsigned long)s_cached_frame_count);
     return true;
-}
-
-static void pmx_release_current_cache(void)
-{
-    if (s_cache_mutex != NULL) xSemaphoreTake(s_cache_mutex, portMAX_DELAY);
-    uint8_t *old_frames = s_cached_frames;
-    s_cached_frames = NULL;
-    s_cached_frame_count = 0;
-    if (s_cache_mutex != NULL) xSemaphoreGive(s_cache_mutex);
-    free(old_frames);
 }
 
 static void pmx_show_cached_frame(uint32_t frame_index)
@@ -462,7 +496,6 @@ static esp_err_t http_upload_handler(httpd_req_t *request)
     s_assets_updating = true;
     ++s_pmx_generation;
     vTaskDelay(pdMS_TO_TICKS(30));
-    pmx_release_current_cache();
     s_display_paused = true;
     vTaskDelay(pdMS_TO_TICKS(2));
 
@@ -472,9 +505,10 @@ static esp_err_t http_upload_handler(httpd_req_t *request)
         esp_partition_write(assets, 0, &header, sizeof(header)) != ESP_OK) {
         s_display_paused = false;
         s_assets_updating = false;
+        const esp_err_t response_result = httpd_resp_send_err(
+            request, HTTPD_500_INTERNAL_SERVER_ERROR, "Flash write failed");
         s_http_uploading = false;
-        httpd_resp_send_err(request, HTTPD_500_INTERNAL_SERVER_ERROR, "Flash write failed");
-        return ESP_FAIL;
+        return response_result;
     }
 
     char buffer[1024];
@@ -486,21 +520,32 @@ static esp_err_t http_upload_handler(httpd_req_t *request)
             esp_partition_write(assets, offset, buffer, block_size) != ESP_OK) {
             s_display_paused = false;
             s_assets_updating = false;
+            const esp_err_t response_result = httpd_resp_send_err(
+                request, HTTPD_500_INTERNAL_SERVER_ERROR, "PMX transfer failed");
             s_http_uploading = false;
-            httpd_resp_send_err(request, HTTPD_500_INTERNAL_SERVER_ERROR, "PMX transfer failed");
-            return ESP_FAIL;
+            return response_result;
         }
         offset += block_size;
     }
 
+    const bool cache_ready = pmx_cache_frames(assets, &header);
     s_display_paused = false;
     ++s_pmx_generation;
     s_assets_updating = false;
+    ESP_LOGI(TAG,
+             "HTTPS Flash upload complete: %d bytes, %lu frames; RAM cache %s; PMX generation %lu",
+             request->content_len,
+             (unsigned long)header.frame_count,
+             cache_ready ? "ready" : "unavailable",
+             (unsigned long)s_pmx_generation);
+
+    const esp_err_t response_result = httpd_resp_sendstr(
+        request,
+        cache_ready
+            ? "Flash upload complete. Animation is cached in RAM for flicker-free playback."
+            : "Flash upload complete. RAM cache is unavailable; using Flash streaming.");
     s_http_uploading = false;
-    ESP_LOGI(TAG, "HTTPS Flash upload complete: %d bytes, %lu frames; PMX generation %lu",
-             request->content_len, (unsigned long)header.frame_count, (unsigned long)s_pmx_generation);
-    httpd_resp_sendstr(request, "Flash upload complete. Display will switch to the saved PMX.");
-    return ESP_OK;
+    return response_result;
 }
 
 static const httpd_uri_t s_root_uri = {
@@ -600,6 +645,11 @@ static void pmx_player_task(void *argument)
     const esp_partition_t *assets = esp_partition_find_first(ESP_PARTITION_TYPE_DATA,
         (esp_partition_subtype_t)PMX_ASSET_SUBTYPE, "assets");
     for (;;) {
+        if (s_assets_updating || s_http_uploading) {
+            vTaskDelay(pdMS_TO_TICKS(20));
+            continue;
+        }
+
         if (pmx_adopt_pending_cache()) {
             /* Continue into the RAM playback path below. */
         }
@@ -611,12 +661,14 @@ static void pmx_player_task(void *argument)
                      (unsigned long)playback_frame_count);
             if (playback_frame_count == 1) {
                 pmx_show_cached_frame(0);
-                while (!s_pending_cache_ready && s_pmx_generation == loaded_generation) {
+                while (!s_assets_updating && !s_http_uploading &&
+                       !s_pending_cache_ready && s_pmx_generation == loaded_generation) {
                     vTaskDelay(pdMS_TO_TICKS(100));
                 }
                 continue;
             }
             for (uint32_t frame_index = 0;
+                 !s_assets_updating && !s_http_uploading &&
                  !s_pending_cache_ready && s_pmx_generation == loaded_generation;
                  frame_index = (frame_index + 1) % playback_frame_count) {
                 pmx_show_cached_frame(frame_index);
@@ -626,7 +678,7 @@ static void pmx_player_task(void *argument)
         }
 
         pmx_header_t header;
-        if (s_assets_updating) {
+        if (s_assets_updating || s_http_uploading) {
             vTaskDelay(pdMS_TO_TICKS(50));
             continue;
         }
@@ -646,7 +698,7 @@ static void pmx_player_task(void *argument)
         if (header.frame_count == 1) {
             uint32_t delay_ms = 100;
             if (pmx_load_frame(assets, &header, 0, &delay_ms)) {
-                while (!s_assets_updating && !s_pending_cache_ready &&
+                while (!s_assets_updating && !s_http_uploading && !s_pending_cache_ready &&
                        s_pmx_generation == loaded_generation) {
                     vTaskDelay(pdMS_TO_TICKS(100));
                 }
@@ -655,7 +707,8 @@ static void pmx_player_task(void *argument)
         }
 
         for (uint32_t frame_index = 0;
-             !s_assets_updating && !s_pending_cache_ready && s_pmx_generation == loaded_generation;
+             !s_assets_updating && !s_http_uploading && !s_pending_cache_ready &&
+             s_pmx_generation == loaded_generation;
              frame_index = (frame_index + 1) % header.frame_count) {
             uint32_t delay_ms = 100;
             if (!pmx_load_frame(assets, &header, frame_index, &delay_ms)) {
