@@ -1,0 +1,25 @@
+# ESP-IDF and build output
+matrix_idf/build/
+**/build/
+*.elf
+*.map
+*.bin
+
+# Local backup snapshots
+backup_*/
+
+# Local editor and OS files
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# Local Wi-Fi credentials
+matrix_idf/main/wifi_config.h
+
+# Generated desktop binaries
+*.exe
+*.obj
+*.pdb
+*.ilk
+*.res
