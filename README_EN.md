@@ -8,11 +8,15 @@ The primary workflow is browser-first: the browser reads an image or GIF, perfor
 
 > Verified baseline: ESP-IDF 6.0.2, classic ESP32-D0WD-V3, 4 MiB Flash, and one 64x64 1/32-scan HUB75 panel. The firmware target is `esp32`, not `esp32s3`.
 
+<div align="center">
+  <img src="./实际演示图像.jpg" width="65%" alt="HUB75 64x64面板实际演示效果">
+</div>
 
+<br>
 
-![SP32引](./ESP32引脚.png)
-
-![际演示图](./实际演示图像.jpg)
+<div align="center">
+  <img src="./ESP32引脚.png" width="65%" alt="ESP32与HUB75面板引脚接线图">
+</div>
 
 ## Contents
 
