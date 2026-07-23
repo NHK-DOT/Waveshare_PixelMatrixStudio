@@ -6,7 +6,11 @@
 
 项目的主要工作流是：浏览器读取图片或 GIF，在本机完成裁剪、缩放、调色和 RGB332 量化，生成 PMX 二进制数据，然后通过局域网 HTTPS 把 PMX 写入 ESP32 的独立 `assets` Flash 分区。日常更换动画不需要串口，也不需要重新编译固件。
 
-> 当前已验证版本：ESP-IDF 6.0.2、经典 ESP32-D0WD-V3、4 MiB Flash、64x64 1/32 扫描 HUB75 面板。固件目标是 `esp32`，不是 `esp32s3`。
+> 当前已验证版本：ESP-IDF 6.0.2、经典 ESP32-D0WD-V3、4 MiB Flash、64x64 1/32 扫描 HUB75 面板。固件目标是 `esp32`
+
+![际演示图](C:\Users\hanjuncheng\Desktop\MatrixWithTerm\实际演示图像.jpg)
+
+![SP32引](C:\Users\hanjuncheng\Desktop\MatrixWithTerm\ESP32引脚.png)
 
 ## 目录
 
@@ -499,61 +503,6 @@ Set-Location C:\Users\hanjuncheng\Desktop\MatrixWithTerm\matrix_idf
 脚本会检查 PMX1 magic、版本、RGB332、64x64、声明长度和 3008 KiB 容量，然后使用 esptool 写到 `0x110000`。它不会重编译或覆盖应用程序。
 
 使用串口备用流程时必须先关闭 ESP-IDF monitor、串口终端和其他占用 COM20 的程序。
-
-## 故障排查
-
-### 启动版本仍是旧提交
-
-观察：
-
-```text
-App version: 9a354f5
-```
-
-如果预期是更新提交，说明烧录了旧 `build/matrix_idf.bin`。执行 `fullclean`、`build`、`flash`，并确认串口中打印新的 Git 短哈希。
-
-### C: 与 D: ESP-IDF Python 冲突
-
-错误会说明 active Python 和 configured Python 不同。不要继续混用环境；显式使用 D 盘 Python 执行 `fullclean`，再重新构建。
-
-### GIF 仍然只有一帧
-
-1. 使用原始 `.gif`，不要误选之前导出的单帧 PMX/PNG。
-2. 页面必须通过 HTTPS 打开并按 `Ctrl+F5`。
-3. 导入信息必须显示多帧。
-4. 检查 `typeof ImageDecoder === 'function'`。
-5. `ImageDecoder` 的 `data` 必须是 `await file.arrayBuffer()`，不能直接传 `File`。
-6. 上传状态若显示 `1 帧 / 4128 字节`，问题在浏览器生成阶段；若显示多帧但固件收到 1 帧，再检查传输。
-
-### 上传多帧后频闪
-
-检查是否有：
-
-```text
-RAM cache ready
-Playing RAM PMX: N frames
-```
-
-如果出现 `RAM cache unavailable` 或 `Falling back to flash streaming`，动画超出缓存能力或连续堆内存不足。减少帧数到 26 帧以内通常最稳定。
-
-### TLS 会话创建失败
-
-- 关闭同一设备的重复浏览器标签页。
-- 等待数秒让旧 TLS 会话释放。
-- 上传时不要重复点击。
-- 确保证书 IP SAN 与当前设备 IP 一致。
-- 如果页面仍能打开且上传成功，偶发浏览器预连接失败不代表主会话失败。
-
-### 页面打不开
-
-- 确认 ESP32 和客户端在同一网段。
-- 串口必须出现 `Server listening on port 443`。
-- 使用 `https://`，不是 `http://`。
-- 检查路由器客户端隔离、Windows 防火墙和固定 IP。
-
-### 固件升级后还是旧网页
-
-网页嵌入应用镜像，必须重新烧录 `matrix_idf.bin`。烧录后按 `Ctrl+F5` 或清除该 IP 的站点缓存。
 
 ## 安全与限制
 

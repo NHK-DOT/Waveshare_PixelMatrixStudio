@@ -8,6 +8,12 @@ The primary workflow is browser-first: the browser reads an image or GIF, perfor
 
 > Verified baseline: ESP-IDF 6.0.2, classic ESP32-D0WD-V3, 4 MiB Flash, and one 64x64 1/32-scan HUB75 panel. The firmware target is `esp32`, not `esp32s3`.
 
+
+
+![SP32引](C:\Users\hanjuncheng\Desktop\MatrixWithTerm\ESP32引脚.png)
+
+![际演示图](C:\Users\hanjuncheng\Desktop\MatrixWithTerm\实际演示图像.jpg)
+
 ## Contents
 
 - [Repository layout](#repository-layout)
@@ -462,48 +468,6 @@ Set-Location C:\Users\hanjuncheng\Desktop\MatrixWithTerm\matrix_idf
 ```
 
 The script validates PMX1, RGB332, 64x64, declared length, and the 3008-KiB capacity before writing offset `0x110000`. It does not rebuild or overwrite the player application. Close ESP-IDF monitor and any other COM20 user first.
-
-## Troubleshooting
-
-### Old app version after flashing
-
-If the boot log shows an old Git hash, the old `build/matrix_idf.bin` was flashed. Run `fullclean`, `build`, and `flash`, then verify the new `App version` line.
-
-### C: and D: Python mismatch
-
-Use the explicit D-drive Python to run `fullclean`, then rebuild. Do not alternate between two ESP-IDF installations in the same build directory.
-
-### GIF imports as one frame
-
-1. Select the original GIF, not a previously exported static PMX/PNG.
-2. Open the page via HTTPS and press `Ctrl+F5`.
-3. Confirm the import UI reports multiple frames.
-4. Check `typeof ImageDecoder === 'function'`.
-5. Ensure decoder input is `await file.arrayBuffer()`, not the `File` object.
-6. `1 frame / 4128 bytes` in the browser means the failure happened before transmission.
-
-### Flicker after multi-frame upload
-
-Look for `RAM cache ready` and `Playing RAM PMX`. `RAM cache unavailable` or `Falling back to flash streaming` means the file exceeded available contiguous cache memory. Keeping animations at or below 26 frames is the most reliable configuration.
-
-### TLS session errors
-
-- Close duplicate device tabs.
-- Wait for stale connections to release.
-- Do not click upload repeatedly.
-- Ensure the certificate IP SAN matches the current ESP32 IP.
-- An occasional failed browser preconnection does not mean the successful main session failed.
-
-### Page is unreachable
-
-- Confirm client and ESP32 are on the same subnet.
-- The serial log must show `Server listening on port 443`.
-- Use `https://`, not `http://`.
-- Check router client isolation, firewall rules, and DHCP reservation.
-
-### Firmware updated but page is old
-
-The page is embedded in `matrix_idf.bin`. Reflash the application, then press `Ctrl+F5` or clear site data for the IP.
 
 ## Security and limits
 
