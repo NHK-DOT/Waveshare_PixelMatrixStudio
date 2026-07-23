@@ -8,9 +8,15 @@
 
 > 当前已验证版本：ESP-IDF 6.0.2、经典 ESP32-D0WD-V3、4 MiB Flash、64x64 1/32 扫描 HUB75 面板。固件目标是 `esp32`
 
-![际演示图](./实际演示图像.jpg)
+<div align="center">
+  <img src="./实际演示图像.jpg" width="65%" alt="HUB75 64x64面板实际演示效果">
+</div>
 
-![SP32引](./ESP32引脚.png)
+<br>
+
+<div align="center">
+  <img src="./ESP32引脚.png" width="65%" alt="ESP32与HUB75面板引脚接线图">
+</div>
 
 ## 目录
 
