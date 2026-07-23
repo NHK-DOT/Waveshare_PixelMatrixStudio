@@ -10,9 +10,9 @@ The primary workflow is browser-first: the browser reads an image or GIF, perfor
 
 
 
-![SP32引](C:\Users\hanjuncheng\Desktop\MatrixWithTerm\ESP32引脚.png)
+![SP32引](./ESP32引脚.png)
 
-![际演示图](C:\Users\hanjuncheng\Desktop\MatrixWithTerm\实际演示图像.jpg)
+![际演示图](./实际演示图像.jpg)
 
 ## Contents
 
