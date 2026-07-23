@@ -62,11 +62,12 @@ Firmware handling in `matrix_idf/main/matrix_idf.c`:
 1. Rejects empty or oversized requests.
 2. Reads and validates the PMX header before Flash erase.
 3. Marks HTTPS upload and assets update as active.
-4. Releases the old RAM cache so the new content has memory available.
-5. Pauses display playback during Flash erase/write.
+4. Stops playback while preserving the existing RAM allocation when it can hold the new PMX. The player reserves at least 26 frames before Wi-Fi/TLS starts, avoiding a large fragmented allocation after upload.
+5. Pauses display output during Flash erase/write.
 6. Erases only the `assets` data partition.
 7. Streams the PMX body into Flash in small blocks.
-8. Clears update flags, resumes display, and increments the PMX generation.
+8. Reads the new PMX into the reusable RAM cache before resuming playback. If cache allocation is unavailable, it falls back to Flash streaming.
+9. Sends the HTTPS response, clears upload flags, and lets the player switch to the new PMX generation.
 
 This is why the web page does not need serial. The ESP32 writes its own content
 partition after receiving bytes over HTTPS.
@@ -86,9 +87,11 @@ firmware.
 ## 6. Playback
 
 The playback loop reads PMX from `assets`, caches frame data in RAM when
-possible, and renders frames to the HUB75 panel. When `/upload` finishes, the
-generation counter changes, so playback exits the old content loop and reloads
-the new PMX from Flash.
+possible, and renders frames to the HUB75 panel. It reserves 26 frame slots
+before Wi-Fi/TLS startup and reuses that allocation for later uploads whenever
+capacity permits. When `/upload` finishes, the generation counter changes, so
+playback exits the old content loop and starts the new cached PMX. Flash
+streaming remains a fallback for content that cannot fit in contiguous RAM.
 
 If no valid PMX exists yet, the firmware falls back to its built-in display
 pattern.

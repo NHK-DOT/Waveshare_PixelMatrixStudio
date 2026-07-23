@@ -18,8 +18,10 @@ upload only; it does not burn through serial, COM20, or Web Serial.
 - PMX input: existing `.pmx` files can be loaded for preview and direct upload.
 - GIF multi-frame decoding depends on browser `ImageDecoder` support. Open the
   ESP32 page through HTTPS, for example `https://192.168.1.218/`, and accept or
-  trust the self-signed certificate once. If the browser still shows one frame,
-  use Chrome/Edge or export PMX from the desktop tool as a fallback.
+  trust the self-signed certificate once. The page converts the selected `File`
+  to an `ArrayBuffer` before constructing `ImageDecoder`; the API does not
+  accept a `File` object directly. If the browser still shows one frame, use
+  Chrome/Edge or export PMX from the desktop tool as a fallback.
 
 ## Edit output
 
